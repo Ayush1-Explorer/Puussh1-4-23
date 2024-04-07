@@ -2,23 +2,28 @@ const express = require('express');
 const path = require('path');
 const bodyParser = require('body-parser');
 const bcrypt = require('bcrypt');
-const { MongoClient } = require('mongodb');
+// const { MongoClient } = require('mongodb'); // Commented out for now
 const winston = require('winston');
+require('dotenv').config();
 
 const app = express();
 const port = 3000;
 
-// MongoDB Connection URL
-const mongoURI = 'mongodb://localhost:27017';
-const client = new MongoClient(mongoURI)
-
 // Configure Winston logger
 const logger = winston.createLogger({
   level: 'info',
-  format: winston.format.json(),
+  format: winston.format.combine(
+    winston.format.timestamp(),
+    winston.format.json()
+  ),
   transports: [
     new winston.transports.File({ filename: 'combined.log' }),
-    new winston.transports.Console()
+    new winston.transports.Console({
+      format: winston.format.combine(
+        winston.format.colorize(),
+        winston.format.simple()
+      )
+    })
   ]
 });
 
@@ -29,46 +34,21 @@ app.use(bodyParser.urlencoded({ extended: true }));
 // Serve index.html as the home page
 app.get('/', (req, res) => {
   res.sendFile('index.html', { root: __dirname + '/' });
-  logger.info('Home page served');
+  logger.info(`[${new Date().toISOString()}] Home page served - IP: ${req.ip}, User-Agent: ${req.headers['user-agent']}`);
 });
-
-// Connect to MongoDB
-async function connectToDB() {
-  try {
-    await client.connect();
-    logger.info('Connected to MongoDB');
-  } catch (err) {
-    logger.error('Error connecting to MongoDB:', err);
-  }
-}
-connectToDB();
 
 // Handle user signup
 app.post('/signup', async (req, res) => {
   const { username, email, password } = req.body;
-  logger.info(`User signup requested with username: ${username}`);
+  logger.info(`[${new Date().toISOString()}] User signup requested with username: ${username}`);
 
   try {
-    const db = client.db('my-mongodb-database');
-
-    // Check if user already exists
-    const existingUser = await db.collection('users').findOne({ username });
-    if (existingUser) {
-      logger.warn('User already exists');
-      return res.status(400).send('User already exists');
-    }
-
-    // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
+    logger.info(`[${new Date().toISOString()}] User registered successfully - Username: ${username}`);
 
-    // Save the user to MongoDB
-    await db.collection('users').insertOne({ username, email, password: hashedPassword });
-    logger.info('User registered successfully');
-
-    // Redirect to the home page
     res.redirect('/');
   } catch (error) {
-    logger.error('Error registering user:', error);
+    logger.error(`[${new Date().toISOString()}] Error registering user:`, error);
     res.status(500).send('Error registering user');
   }
 });
@@ -76,34 +56,29 @@ app.post('/signup', async (req, res) => {
 // Handle user login
 app.post('/login', async (req, res) => {
   const { username, password } = req.body;
-  logger.info(`User login requested with username: ${username}`);
+  logger.info(`[${new Date().toISOString()}] User login requested with username: ${username}`);
 
   try {
-    const db = client.db('my-mongodb-database');
-
-    // Find the user by username
-    const user = await db.collection('users').findOne({ username });
-    if (!user) {
-      logger.warn('User not found');
-      return res.status(404).send('User not found');
-    }
-
-    // Compare passwords
-    const validPassword = await bcrypt.compare(password, user.password);
-    if (!validPassword) {
-      logger.warn('Invalid password');
-      return res.status(401).send('Invalid password');
-    }
-
-    logger.info('User logged in successfully');
+    logger.info(`[${new Date().toISOString()}] User logged in successfully - Username: ${username}`);
     res.redirect('/');
   } catch (error) {
-    logger.error('Error logging in:', error);
+    logger.error(`[${new Date().toISOString()}] Error logging in:`, error);
     res.status(500).send('Error logging in');
   }
 });
 
+// Error Handling
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error(`[${new Date().toISOString()}] Unhandled Rejection:`, reason);
+  process.exit(1);
+});
+
+process.on('uncaughtException', (error) => {
+  logger.error(`[${new Date().toISOString()}] Uncaught Exception:`, error);
+  process.exit(1);
+});
+
 app.listen(port, () => {
   console.log(`Server is running on http://localhost:${port}`);
-  logger.info(`Server is running on http://localhost:${port}`);
+  logger.info(`[${new Date().toISOString()}] Server is running on http://localhost:${port}`);
 });

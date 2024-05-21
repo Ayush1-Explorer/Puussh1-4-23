@@ -4,6 +4,9 @@ const bodyParser = require('body-parser');
 const bcrypt = require('bcrypt');
 const { MongoClient } = require('mongodb');
 const winston = require('winston');
+const LokiTransport = require('winston-loki');
+const morgan = require('morgan');
+const axios = require('axios');
 
 const app = express();
 const port = 3000;
@@ -12,15 +15,30 @@ const port = 3000;
 const mongoURI = 'mongodb://localhost:27017';
 const client = new MongoClient(mongoURI);
 
-// Configure Winston logger
+// Configure Winston logger with Loki transport
 const logger = winston.createLogger({
   level: 'info',
   format: winston.format.json(),
   transports: [
     new winston.transports.File({ filename: 'combined.log' }),
-    new winston.transports.Console()
-  ]
+    new winston.transports.Console(),
+    new LokiTransport({
+      host: 'http://172.25.7.155:3100', // URL of your Loki server
+      labels: { job: 'express-app' },
+      json: true,
+      interval: 1, // send logs every 1 second
+    }),
+  ],
 });
+
+// Middleware to log all requests
+app.use(morgan('combined', {
+  stream: {
+    write: (message) => {
+      logger.info(message.trim());
+    },
+  },
+}));
 
 // Middleware
 app.use(express.static(path.join(__dirname, '')));
@@ -103,7 +121,22 @@ app.post('/login', async (req, res) => {
   }
 });
 
-app.listen(port, () => {
-  console.log(`Server is running on http://localhost:${port}`);
-  logger.info(`Server is running on http://localhost:${port}`);
+// Error handling middleware
+app.use((err, req, res, next) => {
+  logger.error(`${err.status || 500} - ${err.message} - ${req.originalUrl} - ${req.method} - ${req.ip}`);
+  res.status(err.status || 500).send('Server Error');
 });
+
+// Fetch public IP and start the server
+axios.get('https://api.ipify.org?format=json')
+  .then(response => {
+    const publicIp = response.data.ip;
+    app.listen(port, () => {
+      console.log(`Server is running on http://${publicIp}:${port}`);
+      logger.info(`Server is running on http://${publicIp}:${port}`);
+    });
+  })
+  .catch(error => {
+    console.error('Error fetching public IP:', error);
+    logger.error('Error fetching public IP:', error);
+  });

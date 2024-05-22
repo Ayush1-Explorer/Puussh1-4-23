@@ -13,9 +13,9 @@ const port = 3000;
 
 // Configure AWS SDK
 AWS.config.update({
-  region: 'us-east-1', // Specify your AWS region
-  accessKeyId: 'your-access-key-id', // Specify your AWS access key ID
-  secretAccessKey: 'your-secret-access-key', // Specify your AWS secret access key
+  region: process.env.AWS_REGION || 'us-east-1', 
+  accessKeyId: process.env.AWS_ACCESS_KEY_ID, 
+  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY, 
 });
 
 // Create DynamoDB instance
@@ -47,8 +47,9 @@ app.use(morgan('combined', {
 }));
 
 // Middleware
-app.use(express.static(path.join(__dirname, '')));
+app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
+app.use(express.static(path.join(__dirname, '')));
 
 // Serve index.html as the home page
 app.get('/', (req, res) => {
@@ -67,7 +68,7 @@ app.post('/signup', async (req, res) => {
 
     // Save the user to DynamoDB
     const params = {
-      TableName: 'your-table-name', // Specify your DynamoDB table name
+      TableName: 'my-dynamodb-table', // Ensure this matches your DynamoDB table name
       Item: {
         'username': { S: username },
         'email': { S: email },
@@ -81,7 +82,7 @@ app.post('/signup', async (req, res) => {
     // Redirect to the home page
     res.redirect('/');
   } catch (error) {
-    logger.error('Error registering user:', error);
+    logger.error(`Error registering user: ${error.message}`, error);
     res.status(500).send('Error registering user');
   }
 });
@@ -97,6 +98,15 @@ app.use((err, req, res, next) => {
   res.status(err.status || 500).send('Server Error');
 });
 
+// Test DynamoDB connection
+dynamoDB.listTables({}, (err, data) => {
+  if (err) {
+    logger.error('Unable to connect to DynamoDB:', err);
+  } else {
+    logger.info('Connected to DynamoDB:', data.TableNames);
+  }
+});
+
 // Fetch public IP and start the server
 axios.get('https://api.ipify.org?format=json')
   .then(response => {
@@ -109,4 +119,9 @@ axios.get('https://api.ipify.org?format=json')
   .catch(error => {
     console.error('Error fetching public IP:', error);
     logger.error('Error fetching public IP:', error);
+    // Start server even if IP fetch fails
+    app.listen(port, () => {
+      console.log(`Server is running on http://localhost:${port}`);
+      logger.info(`Server is running on http://localhost:${port}`);
+    });
   });

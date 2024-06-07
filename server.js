@@ -29,7 +29,7 @@ const logger = winston.createLogger({
     new winston.transports.File({ filename: 'combined.log' }),
     new winston.transports.Console(),
     new LokiTransport({
-      host: 'http://172.25.7.155:3100', // URL of your Loki server
+      host: 'http://3.85.41.142:3100', // URL of your Loki server
       labels: { job: 'express-app' },
       json: true,
       interval: 1, // send logs every 1 second
